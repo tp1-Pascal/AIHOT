@@ -246,3 +246,55 @@ test("expiry, unknown token, logout isolation and explicit development mode reta
   config.environmentName = "production";
   assert.equal(await sessionPrincipal(undefined), null);
 });
+
+for (const nativeForm of [true, false]) test(`${nativeForm ? "empty URLencoded form" : "bodyless POST"} logout revokes only its session and preserves password sign-in`, async () => {
+  const login = await realFetch(`${base}/api/auth/password`, {
+    method: "POST", redirect: "manual", headers: { "content-type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({ password: PASSWORD_A, return: "/admin/sources" }).toString(),
+  });
+  assert.equal(login.status, 303);
+  assert.equal(login.headers.get("location"), "/admin/sources");
+  const sessionCookie = login.headers.get("set-cookie")!.split(";")[0]!;
+  assert.ok(sessionCookie.startsWith(`${SESSION_COOKIE}=`));
+  const token = decodeURIComponent(sessionCookie.slice(SESSION_COOKIE.length + 1));
+  const me = await principal(token);
+  const other = await password();
+  const response = await realFetch(`${base}/api/auth/logout`, {
+    method: "POST", redirect: "manual",
+    headers: { cookie: sessionCookie, ...(nativeForm ? { "content-type": "application/x-www-form-urlencoded" } : {}) },
+    ...(nativeForm ? { body: "" } : {}),
+  });
+  assert.equal(response.status, 303);
+  assert.equal(response.headers.get("location"), "/");
+  assert.equal(response.headers.get("cache-control"), "no-store");
+  assert.match(response.headers.get("set-cookie")!, new RegExp(`^${SESSION_COOKIE}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0(?:; Secure)?$`));
+  assert.equal(await exists(token), false, "logout deletes the original session immediately");
+  await revoked(token, me.csrf);
+  await principal(other);
+  await principal(await password());
+});
+
+for (const token of [null, "unknown-logout-fixture"]) test(`native logout with ${token === null ? "no session" : "an unknown cookie"} is harmless`, async () => {
+  const other = await password();
+  const response = await realFetch(`${base}/api/auth/logout`, {
+    method: "POST", redirect: "manual", body: "",
+    headers: { "content-type": "application/x-www-form-urlencoded", ...(token === null ? {} : { cookie: cookie(token) }) },
+  });
+  assert.equal(response.status, 303);
+  assert.equal(response.headers.get("location"), "/");
+  assert.match(response.headers.get("set-cookie")!, /Max-Age=0/);
+  await principal(other);
+});
+
+test("HTML form parsing stays scoped to auth forms and admin writes still require CSRF", async () => {
+  const token = await password();
+  const me = await principal(token);
+  const before = writes;
+  const formWrite = await realFetch(`${base}/api/admin/session-test`, {
+    method: "POST", body: "", headers: { cookie: cookie(token), "x-csrf-token": me.csrf, "content-type": "application/x-www-form-urlencoded" },
+  });
+  assert.equal(formWrite.status, 415);
+  assert.equal((await request("/api/admin/session-test", token, "wrong-csrf")).status, 403);
+  assert.equal(writes, before);
+  await principal(token);
+});
