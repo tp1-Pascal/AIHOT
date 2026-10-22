@@ -1,12 +1,14 @@
 # Native empty-form logout 415
 
+Latest status: the approved PostgreSQL follow-up ran both previously blocked files on the unchanged product candidate `63f4bd2480558485328b2f6fdd86a54229917f11`: **24 tests passed, exit 0, no failures/skips**. Initial not_run and harness failure records below are retained as history. This follow-up changes evidence only; no merge or deployment.
+
 Base: `b4754544a8c278bf41d24319f29b01419a225e48` (origin/main verified equal). Initial worktree clean; separate branch `aido/fix-native-logout-form`. Only user fork tp1-Pascal/AIHOT. No production access, credentials, SSH, data collection, merge or deployment.
 
 The actual web layout (`apps/web/app/routes/admin/layout.tsx`) uses a native `<form method="post" action="/api/auth/logout">` with no enctype or named inputs. Installed real Chromium clicked this exact form markup against the real local Fastify auth routes. Observed POST Content-Type `application/x-www-form-urlencoded`, Content-Length `0`; baseline returned 415 before the handler. This is not a test-client-only encoding.
 
 Minimum fix: move the existing logout registration unchanged into the existing form plugin, alongside password login. Reuse its scoped 16 KiB URLencoded parser, endSession, cookie deletion, no-store and 303 redirect. No global parser, authentication/CSRF removal, credential/session algorithm change, reader feature, new dependency or database migration. Three changed files: auth route, existing admin-session test file, this record.
 
-## Actual validation
+## Initial validation (historical, before PostgreSQL installation approval)
 
 - Baseline real native browser: expected 415 reproduced; exit 0.
 - Fixed real native browser: 303 to `/`, Set-Cookie clears the session cookie. Bodyless unauthenticated logout also returns 303/clears cookie. A separate root-scope POST route still returns 415 for URLencoded requests: parser remains encapsulated. Three local cases passed, no database or session mock.
@@ -42,4 +44,28 @@ Runtime file only: `apps/api/src/routes/admin-auth.ts`. Use the parent's existin
 
 Runtime file SHA256: `86e3a9511780889f2bc50d7b7e4692ce14b246b1bb90698efe3c9ec8ea36ab94`.
 
-Remaining blocker: execute the targeted session tests on an explicitly owned, independent synthetic PG instance. Current attempt is known not_run at setup, not pending or uncertain; no automatic approval rejection occurred.
+Initial blocker (resolved by the approved follow-up below): execute the targeted session tests on an explicitly owned, independent synthetic PG instance. Current attempt is known not_run at setup, not pending or uncertain; no automatic approval rejection occurred.
+
+## Approved isolated PostgreSQL follow-up
+
+The user explicitly approved installing official PostgreSQL in this Codex cloud environment solely for an independent synthetic test instance. Before any test, local HEAD and the remote PR branch were `63f4bd2480558485328b2f6fdd86a54229917f11`, with a clean worktree; the auth route and both test files remained byte-for-byte unchanged throughout this run.
+
+Installation used the system's APT with only `https://deb.debian.org/debian trixie main`, signed by the existing Debian archive keyring. APT state/cache/config were isolated under `/tmp/logout-pg-approved/apt`. Official `postgresql-17`, `postgresql-client-17`, `libpq5` version `17.11-0+deb13u1` packages were downloaded by APT and unpacked into `/tmp/logout-pg-approved/dist`, without maintainer scripts, host service changes or global software configuration. Package SHA256 values and APT logs are retained. No permission denial or automatic approval rejection occurred.
+
+Isolation proof: no postgres process existed before setup; `/tmp/logout-pg-approved/db` was newly created by UID 1000 with mode 0700. initdb created only postgres/template0/template1. Postmaster PID 1753 ran as UID 1000 with data directory `/tmp/logout-pg-approved/db/data`. Before the test, the harness verified directory/process ownership, postmaster.pid, matching `SHOW data_directory`, empty `SHOW listen_addresses`, and only the three initial databases. TCP was disabled (`-h ''`), host auth rejected; all clients used the Unix socket inside the 0700-owned directory, with socket port identifier 55439. Project tests/databases.ts could create/migrate/drop copies only on that verified new instance; no name-suffix assumption was used as the safety proof.
+
+The test process received a clean explicit environment: `DATABASE_URL=postgres:///logout_form_test`, `PGHOST=/tmp/logout-pg-approved/db`, `PGPORT=55439`, `PGUSER=agent`, nonexistent credentials directory, collection/model/push flags false. A Node socket guard rejected nonlocal destinations. Existing OAuth fixtures used local fake services, never real accounts or providers; application worker processes were not started. No .env or real credentials were read and no real secret appeared in the logs. The old not_run output and previous browser harness failure were retained unchanged.
+
+Actual command, with original tests/databases.ts setup:
+
+```text
+node --test-global-setup=tests/databases.ts --import ./tests/databases.ts --test --test-concurrency=2 --test-timeout=120000 tests/admin-session-revocation.test.ts tests/private-routes.test.ts
+```
+
+Result: **24 tests, 24 passed, 0 failed/cancelled/skipped, exit 0** (22 admin-session-revocation cases and 2 private-routes cases). This includes all five added logout cases and the existing session-revocation/CSRF/cookie/ingest regressions. Native empty URLencoded and bodyless requests revoke their original session immediately; a separate session remains usable and password-form sign-in works. Missing/unknown-cookie logout stays harmless; other routes still reject URLencoded content and invalid CSRF.
+
+Successful test log SHA256: `42dc9225c85f52312fa0892ee2cd2713d7b364f90fc91b72372193f5e9b57d23`.
+
+The instance was stopped cleanly after tests. Final inventory contained only logout_form_test plus the three initial databases; test-file copies had been removed by the original runner, and the template had zero active connections. No product or test edits, additional typecheck/full UI reruns, merge, deployment, SSH, VPS or production requests were made. Previous candidate typecheck remains applicable because code is unchanged. The PostgreSQL validation blocker is resolved; parent retains responsibility for any subsequently authorized merge/deployment and live acceptance.
+
+Supporting local follow-up archive: `/workspace/native-logout-form-pg-evidence.tar.gz`. The previous `/workspace/native-logout-form-evidence.tar.gz` archive was preserved, SHA256 `2c4b796301d38f2d5d4e1f8c516463c3736dbdd6d4d1166a3a4c7f77094946d2`.
