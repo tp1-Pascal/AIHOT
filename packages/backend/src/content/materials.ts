@@ -5,7 +5,7 @@ import { newArticleId, sha256 } from "../lib/ids.ts";
 import { identityKeyForUrl } from "../lib/url.ts";
 import { collapseWhitespace } from "../lib/text.ts";
 import { publishArticleTx } from "../publication/publish.ts";
-import { groupingReset, reconcileMaterialSource } from "./provenance.ts";
+import { groupingReset, reconcileMaterialSource, privateIngestSourceIds, PRIVATE_INGEST_PREFIX, isPrivateMaterialIdentity } from "./provenance.ts";
 import { emit } from "../modules.ts";
 
 export interface MediaItem {
@@ -189,7 +189,11 @@ async function upsertIn(db: Db, m: MaterialInput): Promise<MaterialResult> {
     publishedAt: m.publishedAt && Number.isFinite(m.publishedAt.getTime()) ? m.publishedAt : null,
     sourceUpdatedAt: m.sourceUpdatedAt && Number.isFinite(m.sourceUpdatedAt.getTime()) ? m.sourceUpdatedAt : null,
   };
-  const identityKey = identityKeyFor(m);
+  const baseIdentity = identityKeyFor(m);
+  const privateSource = privateIngestSourceIds()?.includes(m.sourceId) ?? false;
+  // Reused external IDs already carry their domain. Never let a public source reuse a private key.
+  if (!privateSource && isPrivateMaterialIdentity(baseIdentity)) throw new Error("private identity requires a private source");
+  const identityKey = privateSource && !isPrivateMaterialIdentity(baseIdentity) ? PRIVATE_INGEST_PREFIX + baseIdentity : baseIdentity;
   const discoveredAt = m.discoveredAt ?? new Date();
   const title = collapseWhitespace(m.title).slice(0, 1000) || m.url;
 

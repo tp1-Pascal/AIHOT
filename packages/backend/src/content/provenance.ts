@@ -7,6 +7,18 @@ import { publishArticleTx } from "../publication/publish.ts";
 import { emit } from "../modules.ts";
 import { hasItemPage } from "../publication/rules.ts";
 
+// A stored identity boundary, independent of later source mode/configuration changes.
+export const PRIVATE_INGEST_PREFIX = "private-ingest:";
+export const isPrivateMaterialIdentity = (key: string): boolean => key.startsWith(PRIVATE_INGEST_PREFIX);
+
+/** Absent preserves ordinary public ingest; empty or malformed configuration denies every source. */
+export function privateIngestSourceIds(): string[] | null {
+  const configured = process.env.INGEST_PRIVATE_SOURCE_IDS;
+  if (configured === undefined) return null;
+  const ids = configured.split(",").map(id => id.trim());
+  return ids.every(id => /^[A-Za-z0-9][A-Za-z0-9._:-]{0,119}$/.test(id)) ? ids : [];
+}
+
 /**
  * An UPDATE articles SET fragment: the article's grouping and its "adds value" check are decided again
  * (new material, an editorial publisher, a source turned editorial).
@@ -57,11 +69,12 @@ export function publisherOwnsUrl(source: Publisher, rawUrl: string): boolean {
 
 /** The caller holds the article row lock. A provenance-only repair preserves the material revision. */
 export async function reconcileMaterialSource(db: Db, articleId: string, observed?: { sourceId: string; author?: string | null }): Promise<boolean> {
-  const [article] = await db<{ source_id: string; url: string; author: string | null; participation_mode: string; analyzed: boolean }[]>`
-    SELECT a.source_id, a.url, a.author, s.participation_mode,
+  const [article] = await db<{ source_id: string; identity_key: string; url: string; author: string | null; participation_mode: string; analyzed: boolean }[]>`
+    SELECT a.source_id, a.identity_key, a.url, a.author, s.participation_mode,
       EXISTS (SELECT 1 FROM analyses an WHERE an.article_id = a.id AND an.input_revision = a.revision AND an.relevance IS NOT NULL) AS analyzed
     FROM articles a JOIN sources s ON s.id = a.source_id WHERE a.id = ${articleId} FOR UPDATE OF a`;
   if (!article) return false;
+  if (isPrivateMaterialIdentity(article.identity_key)) return false;
   const candidates = await db<Publisher[]>`
     SELECT s.id, s.kind, s.config, s.participation_mode FROM sources s
     WHERE s.tier = 'T1'
@@ -70,7 +83,8 @@ export async function reconcileMaterialSource(db: Db, articleId: string, observe
       AND (jsonb_typeof(s.config->'publisherUrlPrefixes') = 'array'
       OR (s.kind = 'web_list' AND NOT (s.config ? 'publisherUrlPrefixes')
         AND EXISTS (SELECT 1 FROM article_discoveries d WHERE d.article_id = ${articleId} AND d.source_id = s.id)))`;
-  const owned = candidates.filter((s) => publisherOwnsUrl(s, article.url));
+  const privateSources = privateIngestSourceIds();
+  const owned = candidates.filter((s) => !privateSources?.includes(s.id) && publisherOwnsUrl(s, article.url));
   if (owned.length !== 1) return false;
   const publisher = owned[0]!;
   if (publisher.id === article.source_id) return false;
