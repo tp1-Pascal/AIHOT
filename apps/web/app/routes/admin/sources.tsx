@@ -14,7 +14,7 @@ export async function loader({ request }: Route.LoaderArgs) {
   return adminGet<AdminSources>(request, `/api/admin/sources${url.search}`);
 }
 
-export const meta: Route.MetaFunction = () => [{ title: `信源 · ${SITE.name} 后台` }];
+export const meta: Route.MetaFunction = () => [{ title: `阅读信源 · ${SITE.name} 后台` }];
 
 export default function Sources({ loaderData }: Route.ComponentProps) {
   const { rows, totals, page } = loaderData;
@@ -22,10 +22,19 @@ export default function Sources({ loaderData }: Route.ComponentProps) {
   const navigate = useNavigate();
   return (
     <AdminPage
-      title="信源"
-      subtitle="列表按健康度排序：失败的在最前。点进详情可以预览抓取、手动采集、调整频率与参与方式。"
+      title="阅读信源"
+      subtitle="选择信源阅读最近入库的条目，或打开原文。未处理和隔离条目也可在后台查看。"
       actions={<ButtonLink to="/admin/sources/new" tone="primary">新建信源</ButtonLink>}
     >
+      <Card title="快速进入" className="mb-5">
+        <div className="flex flex-wrap gap-2">
+          <ButtonLink to="/admin/sources">全部信源</ButtonLink>
+          <ButtonLink to="/admin/sources?kind=rss">RSS</ButtonLink>
+          <ButtonLink to="/admin/sources/x-likes#recent-items">X 点赞</ButtonLink>
+          <ButtonLink to="/admin/sources/x-bookmarks#recent-items">X 书签</ButtonLink>
+        </div>
+        <p className="mt-3 text-[13px] text-ink-3">点赞、书签通过“外部上报”接入；“X 搜索”是另一种信源类型。快捷入口会清除其他筛选，没有入库条目的来源会显示为空。</p>
+      </Card>
       <div className="mb-5 grid grid-cols-2 gap-3 md:grid-cols-4">
         <Stat label="全部" value={num(totals.total)} />
         <Stat label="启用" value={num(totals.enabled)} />
@@ -54,7 +63,7 @@ export default function Sources({ loaderData }: Route.ComponentProps) {
             >
               <option value="">全部类型</option>
               {Object.entries(KIND_LABEL).map(([k, v]) => (
-                <option key={k} value={k}>{v}</option>
+                <option key={k} value={k}>{k === "x_search" ? "X 搜索" : v}</option>
               ))}
             </Select>
           </div>
@@ -69,15 +78,16 @@ export default function Sources({ loaderData }: Route.ComponentProps) {
               label: "信源",
               render: (r) => (
                 <div className="min-w-[220px]">
-                  <Link to={`/admin/sources/${encodeURIComponent(r.id)}`} className="font-medium text-ink hover:text-accent" onClick={(e) => e.stopPropagation()}>
+                  <Link to={`/admin/sources/${encodeURIComponent(r.id)}#recent-items`} className="font-medium text-ink hover:text-accent" onClick={(e) => e.stopPropagation()}>
                     {r.name}
                   </Link>
                   <div className="font-mono text-[11.5px] text-ink-4">{r.id}</div>
+                  <Link to={`/admin/sources/${encodeURIComponent(r.id)}#recent-items`} className="mt-1 inline-block text-[12.5px] font-medium text-accent hover:underline" onClick={(e) => e.stopPropagation()}>阅读条目</Link>
                   {r.health === "failing" && r.last_error && <div className="mt-1 line-clamp-1 text-[12px] text-hot">{r.last_error}</div>}
                 </div>
               ),
             },
-            { key: "kind", label: "类型", render: (r) => <Badge>{KIND_LABEL[r.kind] ?? r.kind}</Badge> },
+            { key: "kind", label: "类型", render: (r) => <Badge>{r.kind === "x_search" ? "X 搜索" : KIND_LABEL[r.kind] ?? r.kind}</Badge> },
             {
               key: "mode",
               label: "参与",
