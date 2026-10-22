@@ -139,6 +139,30 @@ export default function SourceDetail({ loaderData }: Route.ComponentProps) {
       </div>
       {s.last_error && s.health !== "ok" && <div className="mb-5 rounded-card bg-hot-soft px-4 py-3 text-[13px] text-hot ring-1 ring-hot/20">{s.last_error}</div>}
 
+      <div id="recent-items" className="mb-5 scroll-mt-32 lg:scroll-mt-6">
+        <Card title="最近条目" pad={false} right={<span>{items.length} 条 · 最多显示最近 30 条</span>}>
+          <DataTable
+            rows={items}
+            rowKey={(r) => r.id}
+            empty="这个信源还没有入库条目。"
+            columns={[
+              {
+                key: "t",
+                label: "标题",
+                render: (r) => (
+                  <div className="min-w-[260px]">
+                    <Link to={`/admin/content/${r.id}`} className="line-clamp-2 font-medium text-ink hover:text-accent">{r.title_zh || r.title}</Link>
+                    <a href={r.url} target="_blank" rel="noreferrer" className="mt-1 inline-block text-[12.5px] text-accent hover:underline">打开原文</a>
+                  </div>
+                ),
+              },
+              { key: "s", label: "状态", render: (r) => <span className="flex gap-1">{r.selected && <Badge tone="accent">精选</Badge>}{r.visibility && r.visibility !== "public" && <Badge tone="warn">{VISIBILITY_LABEL[r.visibility]}</Badge>}<Badge>{r.processing_state}</Badge></span> },
+              { key: "d", label: "发现", render: (r) => <Time at={r.discovered_at} /> },
+            ]}
+          />
+        </Card>
+      </div>
+
       {preview && (
         <Card className="mb-5" title={`预览：${preview.count} 条（${preview.ms}ms，未入库）`} right={<button onClick={() => setPreview(null)}>收起</button>}>
           {preview.items.length ? (
@@ -216,25 +240,6 @@ export default function SourceDetail({ loaderData }: Route.ComponentProps) {
               <Button tone="ghost" disabled={!changes} onClick={() => setDraft(draftOf(s))}>还原</Button>
               <Button tone="primary" disabled={!changes} onClick={() => patch() && setDialog("save")}>保存</Button>
             </div>
-          </Card>
-
-          <Card title="最近条目" pad={false}>
-            <DataTable
-              rows={items}
-              rowKey={(r) => r.id}
-              empty="还没有采集到内容"
-              columns={[
-                {
-                  key: "t",
-                  label: "标题",
-                  render: (r) => (
-                    <Link to={`/admin/content/${r.id}`} className="line-clamp-2 min-w-[260px] text-ink hover:text-accent">{r.title_zh || r.title}</Link>
-                  ),
-                },
-                { key: "s", label: "状态", render: (r) => <span className="flex gap-1">{r.selected && <Badge tone="accent">精选</Badge>}{r.visibility && r.visibility !== "public" && <Badge tone="warn">{VISIBILITY_LABEL[r.visibility]}</Badge>}<Badge>{r.processing_state}</Badge></span> },
-                { key: "d", label: "发现", render: (r) => <Time at={r.discovered_at} /> },
-              ]}
-            />
           </Card>
         </div>
 
